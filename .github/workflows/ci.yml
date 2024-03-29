@@ -176,7 +176,7 @@ jobs:
         run: |
           set -euxo pipefail
           RUSTFLAGS="$RUSTFLAGS -C panic=abort -Zpanic-abort-tests" cargo nextest run --workspace --exclude tokio-macros --exclude tests-build --all-features --tests
-  
+
   test-integration-tests-per-feature:
     needs: basics
     name: Run integration tests for each feature
@@ -950,6 +950,42 @@ jobs:
         run: cargo wasi test --test rt_yield --features wasi-rt
         working-directory: tests-integration
 
+  wasm32-wasi-preview1-threads:
+    name: wasm32-wasi-preview1-threads
+    needs: basics
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_WASM32_WASI_PREVIEW1_THREADS_RUNNER: "wasmtime run -S threads=y --"
+      RUSTFLAGS: --cfg tokio_unstable -Dwarnings -C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=--import-memory -C link-arg=--shared-memory -C link-arg=--max-memory=2147483648
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust ${{ env.rust_stable }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.rust_stable }}
+          targets: wasm32-wasi-preview1-threads
+
+      # Install dependencies
+      - name: Install cargo-hack, wasmtime, and cargo-wasi
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack,wasmtime,cargo-wasi
+
+      - uses: Swatinem/rust-cache@v2
+      - name: WASI prev1-threads test tokio full
+        run: cargo test -p tokio --target wasm32-wasi-preview1-threads --features full
+
+      - name: WASI prev1-threads test tokio-util full
+        run: cargo test -p tokio-util --target wasm32-wasi-preview1-threads --features full
+
+      - name: WASI prev1-threads test tokio-stream
+        run: cargo test -p tokio-stream --target wasm32-wasi-preview1-threads --features time,net,io-util,sync
+
+      - name: test tests-integration --features wasi-rt
+        # TODO: this should become: `cargo hack wasi test --each-feature`
+        run: cargo test --test rt_yield --target wasm32-wasi-preview1-threads --features wasi-rt
+        working-directory: tests-integration
+
   check-external-types:
     name: check-external-types (${{ matrix.os }})
     needs: basics
@@ -1016,11 +1052,11 @@ jobs:
       - name: Make sure dictionary words are sorted and unique
         run: |
           # `sed` removes the first line (number of words) and
-          # the last line (new line). 
-          # 
+          # the last line (new line).
+          #
           # `sort` makes sure everything in between is sorted
           # and contains no duplicates.
-          # 
+          #
           # Since `sort` is sensitive to locale, we set it
           # using LC_ALL to en_US.UTF8 to be consistent in different
           # environments.
